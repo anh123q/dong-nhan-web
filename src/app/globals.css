@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+}
+
+/* Khung đọc truyện: chữ to, giãn dòng thoáng. */
+.reader-body {
+  line-height: 1.9;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.reader-body p + p {
+  margin-top: 1em;
+}
