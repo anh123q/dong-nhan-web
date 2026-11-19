@@ -92,6 +92,14 @@ function ChapterEditorPageContent() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef({ title, content, summary });
   latestRef.current = { title, content, summary };
+  // Ref luôn trỏ tới chương mới nhất: doSave đọc trạng thái từ đây thay
+  // vì closure, tránh lưu đè trạng thái cũ khi 2 lần lưu chạy chồng nhau
+  // (lỗi thực tế: chương vừa xuất bản tự quay về Nháp).
+  const chapterRef = useRef<Chapter | null>(null);
+  chapterRef.current = chapter;
+  // Số thứ tự lần lưu: lần lưu cũ resolve muộn thì bỏ qua, không được
+  // ghi đè state của lần lưu mới hơn.
+  const saveSeqRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,38 +143,45 @@ function ChapterEditorPageContent() {
 
   const doSave = useCallback(
     async (status?: Chapter["status"]) => {
-      if (!chapter) return;
+      const ch = chapterRef.current;
+      if (!ch) return;
+      const seq = ++saveSeqRef.current;
       setSaveState("saving");
       try {
         const { title: t, content: c, summary: s } = latestRef.current;
         const saved = await saveChapter({
-          id: chapter.id,
+          id: ch.id,
           storyId,
-          number: chapter.number,
+          number: ch.number,
           title: t,
           content: c,
           summary: s.trim() || undefined,
-          status: status ?? chapter.status,
+          status: status ?? ch.status,
         });
+        // Chỉ lần lưu mới nhất mới được cập nhật state.
+        if (seq !== saveSeqRef.current) return;
         setChapter(saved);
         setSaveState("saved");
         setSavedAt(new Date().toLocaleTimeString("vi-VN"));
       } catch {
+        if (seq !== saveSeqRef.current) return;
         setSaveState("error");
       }
     },
-    [chapter, storyId]
+    [storyId]
   );
 
-  // Tự lưu nháp sau 1 giây ngừng gõ.
+  // Tự lưu nháp sau 1 giây ngừng gõ. Chỉ chạy khi nội dung đổi — không
+  // phụ thuộc chapter/doSave để tránh vòng lưu lặp mỗi giây.
   useEffect(() => {
     if (loading || !chapter) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => doSave(), 1000);
+    saveTimer.current = setTimeout(() => void doSave(), 1000);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [title, content, summary, loading, chapter, doSave]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, content, summary, loading]);
 
   const onPublish = async () => {
     setPublishing(true);
@@ -210,7 +225,8 @@ function ChapterEditorPageContent() {
           chapter.id,
           JSON.stringify(data.summary)
         );
-        await saveChapter({
+        // Đồng bộ state với bản vừa lưu để nút xuất bản không quay về Nháp.
+        const savedChapter = await saveChapter({
           id: chapter.id,
           storyId,
           number: chapter.number,
@@ -219,6 +235,7 @@ function ChapterEditorPageContent() {
           summary: data.summary.oneLine,
           status: "xuat-ban",
         });
+        setChapter(savedChapter);
         if (data.arcSummary) {
           await saveArcSummary(storyId, data.arcSummary);
           setArcSummary(data.arcSummary);
@@ -429,12 +446,17 @@ function ChapterEditorPageContent() {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <Link
-            href={`/viet/${storyId}`}
+          <button
+            onClick={() => {
+              // Xóa cache điều hướng rồi mới quay về, để trang truyện
+              // tải lại danh sách chương mới nhất thay vì bản cũ.
+              router.refresh();
+              router.push(`/viet/${storyId}`);
+            }}
             className="text-sm text-amber-700 hover:underline"
           >
             ← {story.title}
-          </Link>
+          </button>
           <h1 className="text-xl font-bold">Chương {chapter.number}</h1>
           <p className="text-xs text-stone-500">
             {saveState === "saving" && "Đang lưu nháp..."}

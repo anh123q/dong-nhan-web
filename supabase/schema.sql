@@ -203,3 +203,16 @@ begin
     );
   end loop;
 end $$;
+
+-- ---------- Quyền truy cập bảng cho anon/authenticated ----------
+-- RLS policy thôi CHƯA ĐỦ: role anon/authenticated còn cần quyền
+-- SELECT/INSERT/UPDATE/DELETE ở cấp bảng thì PostgREST mới cho qua.
+-- Bảng tạo qua Management API không tự có các quyền này (lỗi thực tế
+-- gặp ngày 19/11/2026: "permission denied for table embeddings", web
+-- lặng lẽ fallback về localStorage trong khi banner vẫn báo đã nối cloud).
+grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+grant usage, select on all sequences in schema public to anon, authenticated;
+alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated;
+alter default privileges in schema public grant usage, select on sequences to anon, authenticated;
+grant execute on function public.match_embeddings(vector, uuid, integer, uuid) to anon, authenticated;
+alter default privileges in schema public grant execute on functions to anon, authenticated;

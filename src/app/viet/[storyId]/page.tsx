@@ -52,8 +52,27 @@ function EditStoryPageContent() {
     setLoading(false);
   };
 
+  // Chỉ tải lại danh sách chương (không chạm vào form thông tin truyện
+  // để không xóa nội dung user đang sửa dở).
+  const refreshChapters = async () => {
+    setChapters(await getChapters(storyId));
+  };
+
   useEffect(() => {
     refresh();
+    // Quay lại tab/cửa sổ thì tải lại danh sách chương cho chắc.
+    const onFocus = () => {
+      void refreshChapters();
+    };
+    const onVisibility = () => {
+      if (!document.hidden) void refreshChapters();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storyId]);
 
