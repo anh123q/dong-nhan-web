@@ -24,9 +24,13 @@ import type {
  *   "originalWork": string,
  *   "chapterTitle": string,
  *   "chapterNumber": number,
- *   "chapterContent": string,   // BẮT BUỘC: đoạn đã viết để nối tiếp
- *   "direction": string,         // hướng viết do user chọn/ghi (tùy chọn)
- *   "targetWords": number,       // độ dài mong muốn, mặc định ~600 (200-1500)
+ *   "chapterContent": string,   // đoạn đã viết để nối tiếp — có thể trống
+ *                               // nếu có direction: khi đó AI viết đoạn mở
+ *                               // đầu chương theo hướng viết (luồng chính
+ *                               // của user: chỉ đưa hướng, AI viết truyện)
+ *   "direction": string,         // hướng viết do user chọn/ghi — bắt buộc
+ *                               // khi chương chưa có nội dung
+ *   "targetWords": number,       // độ dài mong muốn, mặc định ~600 (200-2000)
  *   "bible": BibleEntry[],
  *   "previousSummaries": [{ number, title, summary }],
  *   "arcSummary": string,
@@ -78,10 +82,13 @@ function buildPrompt(req: ContinueRequest, retrieved: RetrievedChunk[]): string 
     .join("\n\n");
   const targetWords = Math.min(
     Math.max(req.targetWords ?? 600, 200),
-    1500
+    2000
   );
+  const content = (req.chapterContent ?? "").trim();
+  const hasContent = content.length > 0;
+  const direction = req.direction?.trim() ?? "";
 
-  return `Bạn là tác giả viết tiếp truyện đồng nhân (fanfiction) bằng tiếng Việt, nối tiếp đúng đoạn văn user đã viết.
+  return `Bạn là tác giả viết truyện đồng nhân (fanfiction) bằng tiếng Việt${hasContent ? ", nối tiếp đúng đoạn văn user đã viết" : ". Chương này chưa có nội dung — hãy viết đoạn mở đầu chương theo hướng viết user đã cho"}.
 
 Truyện: "${req.storyTitle ?? ""}" — đồng nhân của nguyên tác "${req.originalWork ?? ""}".
 Chương ${req.chapterNumber ?? "?"} "${req.chapterTitle ?? ""}".
@@ -98,17 +105,15 @@ ${summariesText || "(chưa có chương trước)"}
 ## ĐOẠN LIÊN QUAN NHẤT (RAG — canon, chương trước, Bible)
 ${retrievedText || "(không tìm thấy đoạn liên quan)"}
 
-## HƯỚNG VIẾT USER CHỌN (nếu có — tuân thủ hướng này)
-${req.direction?.trim() || "(không có — hãy viết tiếp tự nhiên theo mạch truyện)"}
+## HƯỚNG VIẾT USER CHỌN (tuân thủ hướng này)
+${direction || "(không có — hãy viết tiếp tự nhiên theo mạch truyện)"}
 
-## ĐOẠN ĐÃ VIẾT — VIẾT TIẾP NGAY SAU ĐOẠN NÀY, KHÔNG VIẾT LẠI
-${(req.chapterContent ?? "").slice(-MAX_CONTENT_CHARS)}
+${hasContent ? `## ĐOẠN ĐÃ VIẾT — VIẾT TIẾP NGAY SAU ĐOẠN NÀY, KHÔNG VIẾT LẠI\n${content.slice(-MAX_CONTENT_CHARS)}` : `## CHƯƠNG MỚI — CHƯA CÓ NỘI DUNG\nChương này chưa có đoạn văn nào. Hãy viết đoạn mở đầu chương (khoảng ${targetWords} từ) theo đúng hướng viết ở trên: mở bối cảnh và nhân vật, rồi triển khai mạch truyện theo hướng đó.`}
 
 ## YÊU CẦU
-- Viết tiếp khoảng ${targetWords} từ bằng tiếng Việt, cùng giọng văn và nhịp kể với đoạn đã viết.
+- ${hasContent ? `Viết tiếp khoảng ${targetWords} từ bằng tiếng Việt, cùng giọng văn và nhịp kể với đoạn đã viết.` : `Viết đoạn mở đầu chương khoảng ${targetWords} từ bằng tiếng Việt, giọng văn nhất quán với các chương trước (xem tóm tắt).`}
 - Giữ đúng tên nhân vật, ngoại hình, sức mạnh/cấp bậc, quan hệ và timeline trong Bible và các chương trước. Không bịa thêm nhân vật, vật phẩm hay quy tắc mới trừ khi hướng viết yêu cầu.
-- Không lặp lại đoạn cuối đã viết, không tóm tắt lại những gì vừa xảy ra.
-- Không tự giải quyết dứt điểm plot thread đang mở, trừ khi hướng viết yêu cầu rõ.
+${hasContent ? "- Không lặp lại đoạn cuối đã viết, không tóm tắt lại những gì vừa xảy ra.\n" : ""}- Không tự giải quyết dứt điểm plot thread đang mở, trừ khi hướng viết yêu cầu rõ.
 - Kết thúc ở một điểm dừng tự nhiên (hết cảnh hoặc hết đoạn hội thoại), không dừng giữa câu.
 - Chỉ trả về nội dung viết tiếp, không thêm lời giải thích, tiêu đề hay ghi chú nào khác.`;
 }
@@ -127,11 +132,15 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as ContinueRequest;
     const content = (body.chapterContent ?? "").trim();
-    if (!content) {
+    const direction = (body.direction ?? "").trim();
+    // Chương trống vẫn viết được nếu có hướng viết — đó là luồng chính
+    // của user (chỉ đưa hướng, AI viết truyện). Chỉ báo lỗi khi không có
+    // cả nội dung lẫn hướng viết.
+    if (!content && !direction) {
       return NextResponse.json(
         {
           error:
-            "Chương chưa có nội dung để viết tiếp. Hãy viết vài câu mở đầu trước, hoặc dùng tính năng gợi ý cốt truyện để chọn hướng rồi viết.",
+            "Chương chưa có nội dung và cũng chưa có hướng viết. Hãy nhập hướng viết (hoặc bấm 'Dùng hướng này' ở gợi ý bên trên) để AI viết đoạn mở đầu, hoặc viết vài câu rồi bấm Viết tiếp.",
         },
         { status: 400 }
       );
@@ -169,7 +178,7 @@ export async function POST(request: Request) {
 
     const targetWords = Math.min(
       Math.max(body.targetWords ?? 600, 200),
-      1500
+      2000
     );
     const { text, model } = await callGeminiText(
       buildPrompt({ ...body, bible: trimmedBible }, retrieved),

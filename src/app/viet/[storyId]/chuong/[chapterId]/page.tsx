@@ -694,19 +694,25 @@ function ChapterEditorPageContent() {
       <div className="mt-6 rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold">✍️ Viết tiếp bằng AI</h2>
+            <h2 className="text-lg font-bold">✍️ Viết bằng AI</h2>
             <p className="text-sm text-stone-500">
-              AI viết tiếp ngay sau đoạn bạn đã viết, giữ đúng giọng văn,
+              Chưa viết gì cũng được: chỉ cần nhập hướng viết (hoặc chọn
+              gợi ý bên trên), AI sẽ viết đoạn mở đầu chương. Đã có nội
+              dung thì AI viết tiếp ngay sau đoạn đó, giữ đúng giọng văn,
               nhân vật và luật trong Bible. Đoạn viết ra chỉ là bản nháp —
               chỉ chèn vào chương khi bạn bấm nút chèn.
             </p>
           </div>
           <button
             onClick={onContinue}
-            disabled={continuing || !content.trim()}
+            disabled={continuing || (!content.trim() && !direction.trim())}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            {continuing ? "Đang viết tiếp..." : "Viết tiếp"}
+            {continuing
+              ? "Đang viết..."
+              : content.trim()
+                ? "Viết tiếp"
+                : "Viết chương"}
           </button>
         </div>
 
@@ -714,7 +720,7 @@ function ChapterEditorPageContent() {
           <input
             value={direction}
             onChange={(e) => setDirection(e.target.value)}
-            placeholder="Hướng viết (tùy chọn): VD: Đường Tam phát hiện ra manh mối mới... — hoặc bấm 'Dùng hướng này' ở gợi ý bên trên"
+            placeholder="Hướng viết: VD: Đường Tam phát hiện ra manh mối mới... — bắt buộc nếu chương chưa có nội dung; hoặc bấm 'Dùng hướng này' ở gợi ý bên trên"
             className={`${inputCls} flex-1`}
           />
           <select
@@ -726,6 +732,8 @@ function ChapterEditorPageContent() {
             <option value={400}>~400 từ</option>
             <option value={600}>~600 từ</option>
             <option value={1000}>~1000 từ</option>
+            <option value={1500}>~1500 từ</option>
+            <option value={2000}>~2000 từ</option>
           </select>
         </div>
 
@@ -751,7 +759,7 @@ function ChapterEditorPageContent() {
                 onClick={insertContinuation}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
               >
-                Chèn vào cuối chương
+                Chèn vào chương
               </button>
               <button
                 onClick={() => setContinueResult(null)}
